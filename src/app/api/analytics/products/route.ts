@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPinecone } from '@/lib/pinecone';
+import { NormalizedIntentSchema } from '@/utils/normalization';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
     const intent = searchParams.get('intent');
     const successCategory = searchParams.get('successCategory');
     const limit = parseInt(searchParams.get('limit') || '100');
+    const useSemanticClustering = searchParams.get('clustering') === 'true';
 
     // Build filter
     const filter: Record<string, any> = {};
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
         intent: string;
         outcome: string;
         callType: string;
+        transcript?: string;
         transcriptSnippet?: string;
       }>;
     }> = {};
@@ -87,8 +90,9 @@ export async function GET(req: NextRequest) {
         const outcome = metadata.successCategory || 'Unknown';
         analytics.byOutcome[outcome] = (analytics.byOutcome[outcome] || 0) + 1;
 
-        // Track by intent
-        const intentStr = metadata.intent || 'Unknown';
+        // Track by intent (normalized)
+        const rawIntent = metadata.intent || 'Unknown';
+        const intentStr = rawIntent === 'Unknown' ? 'Unknown' : NormalizedIntentSchema.parse(rawIntent);
         const intentCategory = metadata.intentCategory || 'Unknown';
         analytics.byIntent[intentStr] = (analytics.byIntent[intentStr] || 0) + 1;
 
@@ -96,12 +100,13 @@ export async function GET(req: NextRequest) {
         const callType = metadata.callType || 'Unknown';
         analytics.byCallType[callType] = (analytics.byCallType[callType] || 0) + 1;
 
-        // Store record reference
+        // Store record reference with normalized intent
         analytics.records.push({
           id: match.id,
-          intent: intentStr,
+          intent: intentStr, // Already normalized above
           outcome: outcome,
           callType: callType,
+          transcript: metadata.transcript,
           transcriptSnippet: metadata.transcriptSnippet,
         });
       }
@@ -123,11 +128,12 @@ export async function GET(req: NextRequest) {
         }
         
         if (productNames.includes(product) && metadata.intent) {
-          const existing = intentMap.get(metadata.intent);
+          const normalizedIntent = metadata.intent === 'Unknown' ? 'Unknown' : NormalizedIntentSchema.parse(metadata.intent);
+          const existing = intentMap.get(normalizedIntent);
           if (existing) {
             existing.count++;
           } else {
-            intentMap.set(metadata.intent, {
+            intentMap.set(normalizedIntent, {
               category: metadata.intentCategory || 'Unknown',
               count: 1,
             });
@@ -166,7 +172,7 @@ export async function GET(req: NextRequest) {
         intent: r.intent,
         outcome: r.outcome,
         callType: r.callType,
-        snippet: r.transcriptSnippet?.substring(0, 100) + (r.transcriptSnippet && r.transcriptSnippet.length > 100 ? '...' : ''),
+        snippet: (r.transcript || r.transcriptSnippet || '').substring(0, 200) + ((r.transcript || r.transcriptSnippet || '').length > 200 ? '...' : ''),
       })),
     })).sort((a, b) => b.totalCalls - a.totalCalls);
 

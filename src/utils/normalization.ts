@@ -1,48 +1,87 @@
+import { z } from 'zod';
 import { FinalSchema, SuccessCategory, CallType } from '@/utils/schemas';
 
-const callTypeMap: Record<string, CallType> = {
-  automated: 'Automated',
-  bot: 'Automated',
-  ivr: 'Automated',
-  ai: 'Automated',
-  escalated: 'Escalated',
-  escalation: 'Escalated',
-  external: 'Escalated',
-};
+// Zod schema for normalizing call types
+export const NormalizedCallTypeSchema = z.string().transform((val) => {
+  const normalized = val.trim().toLowerCase();
+  const callTypeMap: Record<string, CallType> = {
+    automated: 'Automated',
+    bot: 'Automated',
+    ivr: 'Automated',
+    ai: 'Automated',
+    escalated: 'Escalated',
+    escalation: 'Escalated',
+    external: 'Escalated',
+    human: 'Escalated',
+    agent: 'Escalated',
+  };
+  return callTypeMap[normalized] || val;
+});
 
-const successMap: Record<string, SuccessCategory> = {
-  success: 'Successful',
-  successful: 'Successful',
-  pass: 'Successful',
-  'partially successful': 'Partially Successful',
-  partial: 'Partially Successful',
-  partial_success: 'Partially Successful',
-  'partial success': 'Partially Successful',
-  fail: 'Unsuccessful',
-  failed: 'Unsuccessful',
-  unsuccessful: 'Unsuccessful',
-};
+// Zod schema for normalizing success categories (simple pattern-based)
+export const NormalizedSuccessCategorySchema = z.string().transform((val) => {
+  const s = val.trim().toLowerCase();
+  const compact = s.replace(/[_\s-]+/g, ' ');
+  if (/(partial|partially)/.test(compact)) return 'Partially Successful';
+  if (/(success|passed|pass|ok|resolved)/.test(compact)) return 'Successful';
+  if (/(fail|unsuccess)/.test(compact)) return 'Unsuccessful';
+  return val;
+});
 
+
+export const NormalizedIntentSchema = z.string().transform((val) => {
+  // Just clean up the intent string
+  return val.trim();
+});
+
+// Helper functions for backward compatibility
 export function normalizeCallType(value: string): CallType | undefined {
-  const key = value.trim().toLowerCase();
-  return callTypeMap[key as keyof typeof callTypeMap];
+  try {
+    return NormalizedCallTypeSchema.parse(value) as CallType;
+  } catch {
+    return undefined;
+  }
 }
 
 export function normalizeSuccessCategory(value: string): SuccessCategory | undefined {
-  const key = value.trim().toLowerCase();
-  return successMap[key as keyof typeof successMap];
+  try {
+    return NormalizedSuccessCategorySchema.parse(value) as SuccessCategory;
+  } catch {
+    return undefined;
+  }
 }
 
 export function normalizeFinal(result: unknown) {
   if (typeof result !== 'object' || result === null) return undefined;
   const obj: any = { ...result };
+  
+  // Normalize call type using Zod schema
   if (typeof obj.callType === 'string') {
-    obj.callType = normalizeCallType(obj.callType) ?? obj.callType;
+    try {
+      obj.callType = NormalizedCallTypeSchema.parse(obj.callType);
+    } catch {
+      // Keep original if normalization fails
+    }
   }
+  
+  // Normalize success category using Zod schema
   if (typeof obj.successCategory === 'string') {
-    obj.successCategory = normalizeSuccessCategory(obj.successCategory) ?? obj.successCategory;
+    try {
+      obj.successCategory = NormalizedSuccessCategorySchema.parse(obj.successCategory);
+    } catch {
+      // Keep original if normalization fails
+    }
   }
-  if (typeof obj.intent === 'string') obj.intent = obj.intent.trim();
+  
+  // Normalize intent using Zod schema
+  if (typeof obj.intent === 'string') {
+    try {
+      obj.intent = NormalizedIntentSchema.parse(obj.intent);
+    } catch {
+      obj.intent = obj.intent.trim();
+    }
+  }
+  
   if (typeof obj.intentCategory === 'string') obj.intentCategory = obj.intentCategory.trim();
   if (typeof obj.summary === 'string') obj.summary = obj.summary.trim();
   if (Array.isArray(obj.keyPoints)) obj.keyPoints = obj.keyPoints.map((k: unknown) => String(k).trim()).filter(Boolean);

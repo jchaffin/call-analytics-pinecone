@@ -14,6 +14,9 @@
   "description": "",
   "type": "module",
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.17",
+    "@ai-sdk/google": "^2.0.15",
+    "@ai-sdk/mistral": "^2.0.15",
     "@ai-sdk/openai": "^2.0.32",
     "@pinecone-database/pinecone": "^6.1.2",
     "@types/node": "^24.5.2",
@@ -22,6 +25,7 @@
     "next": "^14.2.32",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "zod": "^4.1.11"
   }

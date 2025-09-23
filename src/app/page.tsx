@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from 'react';
+import { MODEL_PROVIDERS, getDefaultModelId } from '@/lib/ai';
 
 type Result = {
   callType: 'Automated' | 'Escalated';
@@ -16,6 +17,13 @@ type Result = {
   keywords?: { term: string; score: number }[];
   relatedDocs?: { id: string; score: number; metadata?: Record<string, unknown> }[];
   pineconeRecordId?: string;
+  _timings?: {
+    ai_analysis: number;
+    pinecone_search: number;
+    pinecone_upsert: number;
+    total: number;
+    unit: string;
+  };
 };
 
 type ProductAnalytics = {
@@ -39,12 +47,23 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [model, setModel] = useState(getDefaultModelId());
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [productAnalytics, setProductAnalytics] = useState<ProductAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   const canSubmit = useMemo(() => transcript.trim().length > 0 && !isLoading, [transcript, isLoading]);
+  
+  // Helper to get model info
+  const getModelInfo = (modelId: string): { name: string; description: string } | null => {
+    for (const provider of Object.values(MODEL_PROVIDERS)) {
+      const models = provider.models as Record<string, { name: string; description: string }>;
+      if (modelId in models) {
+        return models[modelId];
+      }
+    }
+    return null;
+  };
 
   const renderTextWithProductLinks = (text: string, products: Array<{ id: string; name: string; score: number }> | undefined) => {
     if (!products || products.length === 0) return text;
@@ -86,7 +105,7 @@ export default function HomePage() {
   const fetchProductAnalytics = async (productName: string) => {
     setLoadingAnalytics(true);
     try {
-      const res = await fetch(`/api/analytics/products?product=${encodeURIComponent(productName)}`);
+      const res = await fetch(`/api/analytics/products?product=${encodeURIComponent(productName)}&threshold=0.85`);
       const data = await res.json();
       const product = data.products.find((p: ProductAnalytics) => p.product === productName);
       setProductAnalytics(product || null);
@@ -148,13 +167,41 @@ export default function HomePage() {
           {transcript.trim().length > 0 && transcript.trim().length < 10 && !isLoading && (
             <span style={{ color: '#6b7280', fontSize: 12 }}>Min 10 characters</span>
           )}
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+          <select 
+            value={model} 
+            onChange={(e) => setModel(e.target.value)}
+            style={{
+              marginLeft: 8,
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid #e5e7eb',
+              backgroundColor: 'white',
+              fontSize: 14,
+              cursor: 'pointer'
+            }}
+            title="Select AI model for analysis"
+          >
+            {Object.entries(MODEL_PROVIDERS).map(([providerId, provider]) => (
+              <optgroup key={providerId} label={provider.name}>
+                {Object.entries(provider.models).map(([modelId, modelInfo]) => (
+                  <option key={modelId} value={modelId}>
+                    {modelInfo.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
+        {model && getModelInfo(model) && (
+          <div style={{ 
+            fontSize: 12, 
+            color: '#6b7280', 
+            marginBottom: 8,
+            textAlign: 'center'
+          }}>
+            {getModelInfo(model)?.description}
+          </div>
+        )}
 
         <textarea
           value={transcript}
@@ -190,6 +237,23 @@ export default function HomePage() {
             <Info label="Confidence" value={`${Math.round(result.confidence * 100)}%`} />
             {result.escalationReason && <Info label="Escalation Reason" value={result.escalationReason} />}
           </div>
+          
+          {result._timings && (
+            <div style={{ 
+              marginBottom: 12, 
+              padding: '8px 12px', 
+              backgroundColor: '#f3f4f6', 
+              borderRadius: 6,
+              fontSize: 14
+            }}>
+              <span style={{ color: '#6b7280' }}>Analysis time: </span>
+              <span style={{ fontWeight: 600 }}>{(result._timings.total / 1000).toFixed(2)}s</span>
+              <span style={{ color: '#6b7280', fontSize: 12, marginLeft: 8 }}>
+                (AI: {(result._timings.ai_analysis / 1000).toFixed(2)}s, 
+                 Pinecone: {((result._timings.pinecone_search + result._timings.pinecone_upsert) / 1000).toFixed(2)}s)
+              </span>
+            </div>
+          )}
           <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Summary</h3>
           <p style={{ marginBottom: 12 }}>{renderTextWithProductLinks(result.summary, result.products)}</p>
           <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Key Points</h3>

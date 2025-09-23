@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* Shared layout */
+.container-main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.page-title { font-size: 28px; font-weight: 700; margin-bottom: 24px; }
+.empty-state { text-align: center; padding: 48px; color: #6b7280; }
+.loading { padding: 24px; }
+.error { padding: 24px; color: #991b1b; }
+
+/* Stats */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.card-muted { background: #f3f4f6; padding: 16px; border-radius: 8px; }
+.muted { font-size: 14px; color: #6b7280; }
+.value-lg { font-size: 24px; font-weight: 700; }
+
+/* Products */
+.products-grid { display: grid; gap: 24px; }
+.product-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; }
+.mb-16 { margin-bottom: 16px; }
+.h2 { font-size: 20px; font-weight: 600; }
+.variants { margin-top: 8px; }
+.variant-pill { font-size: 13px; padding: 2px 8px; border-radius: 4px; margin-right: 4px; display: inline-block; margin-bottom: 4px; background: #e5e7eb; color: #374151; }
+.variant-pill.active { background: #10b981; color: #fff; }
+
+/* Metrics */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.metric-label { font-size: 14px; color: #6b7280; }
+.metric-value { font-size: 18px; font-weight: 600; }
+.metric-success { color: #059669; }
+.metric-partial { color: #d97706; }
+.metric-fail { color: #dc2626; }
+
+/* Lists */
+.section { margin-bottom: 20px; }
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.list-grid { display: grid; gap: 6px; }
+.list-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
+.pill-count { background: #e5e7eb; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+
+/* Info grids */
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.info-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #6b7280; }
+.info-text { font-size: 14px; }
+.info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+
+/* Records */
+.record-section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.record-block { margin-bottom: 16px; }
+.record-heading { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.text-success { color: #059669; }
+.text-partial { color: #d97706; }
+.text-fail { color: #dc2626; }
+.record-list { display: grid; gap: 8px; }
+.record-card { background: #f9fafb; padding: 12px; border-radius: 6px; font-size: 13px; border: 1px solid #e5e7eb; }
+.record-card-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.record-badge { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+.record-id { font-size: 11px; color: #6b7280; }
+.more { font-size: 12px; color: #6b7280; text-align: center; }
+
