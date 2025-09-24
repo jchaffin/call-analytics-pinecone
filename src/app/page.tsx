@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { MODEL_PROVIDERS, getDefaultModelId } from '@/lib/ai';
 
 type Result = {
+  analysisTime: number;
   callType: 'Automated' | 'Escalated';
   successCategory: 'Successful' | 'Partially Successful' | 'Unsuccessful';
   intent: string;
@@ -42,6 +43,34 @@ type ProductAnalytics = {
   }>>;
 };
 
+type BatchResult = {
+  success: boolean;
+  modelId: string;
+  result: Result | null;
+  error: string | null;
+  modelInfo: {
+    provider: string;
+    name: string;
+  };
+};
+
+type BatchAnalysis = {
+  success: boolean;
+  transcript: string;
+  totalModels: number;
+  successfulAnalyses: number;
+  failedAnalyses: number;
+  consensus: {
+    callType: string;
+    successCategory: string;
+    intent: string;
+    totalVotes: number;
+  };
+  resultsByProvider: Record<string, BatchResult[]>;
+  results: BatchResult[];
+  processingTime: number;
+};
+
 export default function HomePage() {
   const [transcript, setTranscript] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +80,8 @@ export default function HomePage() {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [productAnalytics, setProductAnalytics] = useState<ProductAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchAnalysis | null>(null);
+  const [isBatchLoading, setIsBatchLoading] = useState(false);
 
   const canSubmit = useMemo(() => transcript.trim().length > 0 && !isLoading, [transcript, isLoading]);
   
@@ -84,15 +115,7 @@ export default function HomePage() {
               setSelectedProduct(matchedProduct.name);
               fetchProductAnalytics(matchedProduct.name);
             }}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              color: '#6366f1',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              font: 'inherit'
-            }}
+            className="bg-none border-none p-0 text-indigo-500 underline cursor-pointer font-inherit"
           >
             {part}
           </button>
@@ -118,7 +141,9 @@ export default function HomePage() {
 
   const onFile = async (file?: File) => {
     if (!file) return;
+    console.log('File selected:', file.name, 'size:', file.size);
     const text = await file.text();
+    console.log('File content length:', text.length);
     setTranscript(text);
     setError(null);
   };
@@ -133,52 +158,134 @@ export default function HomePage() {
     setError(null);
     setResult(null);
     try {
+      console.log('Starting analysis for text length:', tx.length);
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: tx, model })
       });
+      console.log('API response status:', res.status);
       const data = await res.json();
+      console.log('API response data:', data);
+
       if (!res.ok) throw new Error(data?.error || 'Failed');
+
+      // Check if response contains error
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Basic validation that we have the expected result structure
+      if (!data.callType || !data.successCategory || !data.intent) {
+        throw new Error('Invalid response format from server');
+      }
+
+      console.log('Setting result...');
       setResult(data as Result);
+      console.log('Result set successfully');
     } catch (e: any) {
+      console.error('Analysis error:', e);
       setError(e?.message || 'Unexpected error');
     } finally {
+      console.log('Setting loading to false');
       setIsLoading(false);
     }
   };
 
+  const batchAnalyze = async (inputText?: string) => {
+    const tx = (inputText ?? transcript).trim();
+    if (tx.length < 10) {
+      setError('Please enter at least 10 characters.');
+      return;
+    }
+    setIsBatchLoading(true);
+    setError(null);
+    setBatchResult(null);
+    try {
+      console.log('Starting batch analysis for text length:', tx.length);
+      const res = await fetch('/api/batch-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: tx })
+      });
+      console.log('Batch API response status:', res.status);
+      const data = await res.json();
+      console.log('Batch API response data:', data);
+
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+
+      // Check if response contains error
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log('Setting batch result...');
+      setBatchResult(data as BatchAnalysis);
+      console.log('Batch result set successfully');
+    } catch (e: any) {
+      console.error('Batch analysis error:', e);
+      setError(e?.message || 'Unexpected error');
+    } finally {
+      console.log('Setting batch loading to false');
+      setIsBatchLoading(false);
+    }
+  };
+
   return (
-    <main>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>Post Call Analysis</h1>
-      <p style={{ color: '#555', marginBottom: 16 }}>Upload a transcript (.txt) or paste below.</p>
+    <main className="max-w-5xl mx-auto p-6">
+      <h1 className="text-4xl font-bold mb-2">Post Call Analysis</h1>
+      <p className="text-gray-500 mb-6">
+        Upload a transcript (.txt) or paste below.
+      </p>
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
           analyze();
         }}
+        className="mb-6"
       >
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-          <input type="file" accept=".txt" onChange={(e) => onFile(e.target.files?.[0])} />
-          <button type="submit" disabled={isLoading} style={{ padding: '8px 12px' }}>
-            {isLoading ? 'Analyzing…' : 'Analyze'}
+        <div className="flex gap-3 items-center mb-3">
+          <input
+            type="file"
+            accept=".txt"
+            onChange={(e) => onFile(e.target.files?.[0])}
+            id="file-upload"
+            className="hidden"
+          />
+          <label htmlFor="file-upload" className="file-input">
+            Choose File
+          </label>
+          <button
+            type="submit"
+            disabled={isLoading || isBatchLoading}
+            className={`px-6 py-3 text-white rounded-lg text-base font-semibold ${
+              isLoading || isBatchLoading
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer'
+            }`}
+          >
+            {isLoading ? 'Analyzing...' : 'Analyze'}
+          </button>
+          <button
+            type="button"
+            disabled={isLoading || isBatchLoading}
+            onClick={() => batchAnalyze()}
+            className={`px-6 py-3 text-white rounded-lg text-base font-semibold ${
+              isLoading || isBatchLoading
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700 cursor-pointer'
+            }`}
+          >
+            {isBatchLoading ? 'Batch Analyzing...' : 'Batch Analyze'}
           </button>
           {transcript.trim().length > 0 && transcript.trim().length < 10 && !isLoading && (
-            <span style={{ color: '#6b7280', fontSize: 12 }}>Min 10 characters</span>
+            <span className="text-gray-500 text-xs">Min 10 characters</span>
           )}
-          <select 
-            value={model} 
+          <select
+            value={model}
             onChange={(e) => setModel(e.target.value)}
-            style={{
-              marginLeft: 8,
-              padding: '8px 12px',
-              borderRadius: 6,
-              border: '1px solid #e5e7eb',
-              backgroundColor: 'white',
-              fontSize: 14,
-              cursor: 'pointer'
-            }}
+            className="ml-2 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm cursor-pointer"
             title="Select AI model for analysis"
           >
             {Object.entries(MODEL_PROVIDERS).map(([providerId, provider]) => (
@@ -193,12 +300,7 @@ export default function HomePage() {
           </select>
         </div>
         {model && getModelInfo(model) && (
-          <div style={{ 
-            fontSize: 12, 
-            color: '#6b7280', 
-            marginBottom: 8,
-            textAlign: 'center'
-          }}>
+          <div className="text-xs text-gray-500 mb-2 text-center">
             {getModelInfo(model)?.description}
           </div>
         )}
@@ -212,71 +314,82 @@ export default function HomePage() {
               analyze();
             }
           }}
-          placeholder="Paste transcript text here"
-          rows={12}
-          style={{ width: '100%', padding: 12, fontFamily: 'ui-monospace, SFMono-Regular', marginBottom: 16 }}
+          placeholder="Enter call transcript here..."
+          className="w-full min-h-36 p-3 border border-gray-300 rounded-lg text-sm font-inherit resize-vertical mb-4"
         />
-        <div style={{ color: '#6b7280', fontSize: 12, marginTop: -8, marginBottom: 16 }}>
+        <div className="text-gray-500 text-xs -mt-2 mb-4">
           Press ⌘ Enter (Mac) or Ctrl Enter to analyze
         </div>
       </form>
 
       {error && (
-        <div style={{ background: '#fee2e2', color: '#991b1b', padding: 12, borderRadius: 6, marginBottom: 16 }}>
+        <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4">
           {error}
         </div>
       )}
 
       {result && (
-        <section style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <Info label="Call Type" value={result.callType} />
-            <Info label="Success" value={result.successCategory} />
-            <Info label="Intent" value={result.intent} />
-            <Info label="Intent Category" value={result.intentCategory} />
-            <Info label="Confidence" value={`${Math.round(result.confidence * 100)}%`} />
-            {result.escalationReason && <Info label="Escalation Reason" value={result.escalationReason} />}
-          </div>
-          
-          {result._timings && (
-            <div style={{ 
-              marginBottom: 12, 
-              padding: '8px 12px', 
-              backgroundColor: '#f3f4f6', 
-              borderRadius: 6,
-              fontSize: 14
-            }}>
-              <span style={{ color: '#6b7280' }}>Analysis time: </span>
-              <span style={{ fontWeight: 600 }}>{(result._timings.total / 1000).toFixed(2)}s</span>
-              <span style={{ color: '#6b7280', fontSize: 12, marginLeft: 8 }}>
-                (AI: {(result._timings.ai_analysis / 1000).toFixed(2)}s, 
-                 Pinecone: {((result._timings.pinecone_search + result._timings.pinecone_upsert) / 1000).toFixed(2)}s)
-              </span>
+        <>
+          <div className="bg-gray-100 p-4 rounded-lg mb-6">
+            <h2 className="text-xl font-semibold mb-3">Analysis Results</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+              <div>
+                <div className="text-sm text-gray-500">Call Type</div>
+                <div className="text-lg font-semibold">{result.callType}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-500">Success Category</div>
+                <div className="text-lg font-semibold">{result.successCategory}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-500">Intent</div>
+                <div className="text-lg font-semibold">{result.intent}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-500">Confidence</div>
+                <div className="text-lg font-semibold">{Math.round(result.confidence * 100)}%</div>
+              </div>
+              {result.escalationReason && (
+                <div>
+                  <div className="text-sm text-gray-500">Escalation Reason</div>
+                  <div className="text-lg font-semibold">{result.escalationReason}</div>
+                </div>
+              )}
             </div>
-          )}
-          <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Summary</h3>
-          <p style={{ marginBottom: 12 }}>{renderTextWithProductLinks(result.summary, result.products)}</p>
-          <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Key Points</h3>
-          <ul style={{ paddingLeft: 18, marginBottom: 12 }}>
-            {result.keyPoints.map((k, i) => (
-              <li key={i}>{renderTextWithProductLinks(k, result.products)}</li>
-            ))}
-          </ul>
-          {result.actionItems.length > 0 && (
-            <>
-              <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Action Items</h3>
-              <ul style={{ paddingLeft: 18 }}>
-                {result.actionItems.map((k, i) => (
-                  <li key={i}>{renderTextWithProductLinks(k, result.products)}</li>
-                ))}
-              </ul>
-            </>
-          )}
+
+            {result._timings && (
+              <div className="mt-2 text-sm text-gray-500">
+                Analysis time: {(result._timings.total / 1000).toFixed(2)}s
+                (AI: {(result._timings.ai_analysis / 1000).toFixed(2)}s,
+                 Pinecone: {((result._timings.pinecone_search + result._timings.pinecone_upsert) / 1000).toFixed(2)}s)
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6">
+            <h3 className="font-semibold mb-1.5">Summary</h3>
+            <p className="mb-3">{renderTextWithProductLinks(result.summary, result.products)}</p>
+            <h3 className="font-semibold mb-1.5">Key Points</h3>
+            <ul className="pl-4 mb-3">
+              {result.keyPoints.map((k, i) => (
+                <li key={i}>{renderTextWithProductLinks(k, result.products)}</li>
+              ))}
+            </ul>
+            {result.actionItems.length > 0 && (
+              <>
+                <h3 className="font-semibold mb-1.5">Action Items</h3>
+                <ul className="pl-4">
+                  {result.actionItems.map((k, i) => (
+                    <li key={i}>{renderTextWithProductLinks(k, result.products)}</li>
+                  ))}
+                </ul>
+              </>
+            )}
 
           {result.products && result.products.length > 0 && (
             <>
-              <h3 style={{ fontWeight: 600, margin: '12px 0 6px' }}>Products Mentioned</h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 18 }}>
+              <h3 className="font-semibold my-3">Products Mentioned</h3>
+              <div className="flex flex-wrap gap-2 ml-4">
                 {result.products.map((p, i) => (
                   <button
                     key={i}
@@ -284,18 +397,7 @@ export default function HomePage() {
                       setSelectedProduct(p.name);
                       fetchProductAnalytics(p.name);
                     }}
-                    style={{
-                      padding: '4px 12px',
-                      backgroundColor: '#e9d5ff',
-                      color: '#6b21a8',
-                      borderRadius: '9999px',
-                      fontSize: '14px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'background-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d8b4fe'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e9d5ff'}
+                    className="px-3 py-1 bg-purple-200 text-purple-800 rounded-full text-sm border-none cursor-pointer hover:bg-purple-300 transition-colors duration-200"
                   >
                     {p.name} ({Math.round(p.score * 100)}%)
                   </button>
@@ -306,8 +408,8 @@ export default function HomePage() {
 
           {result.pineconeRecordId && (
             <>
-              <h3 style={{ fontWeight: 600, margin: '12px 0 6px' }}>Pinecone Record</h3>
-              <p style={{ marginLeft: 18, fontFamily: 'monospace', fontSize: '14px', color: '#6366f1' }}>
+              <h3 className="font-semibold my-3">Pinecone Record</h3>
+              <p className="ml-4 font-mono text-sm text-indigo-500">
                 ID: {result.pineconeRecordId}
               </p>
             </>
@@ -315,61 +417,125 @@ export default function HomePage() {
 
           {result.keywords && result.keywords.length > 0 && (
             <>
-              <h3 style={{ fontWeight: 600, margin: '12px 0 6px' }}>Keywords</h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <h3 className="font-semibold my-3">Keywords</h3>
+              <div className="flex flex-wrap gap-2">
                 {result.keywords.map((k, i) => (
-                  <span key={i} style={{ background: '#f3f4f6', padding: '4px 8px', borderRadius: 999 }}>{k.term}</span>
+                  <span key={i} className="bg-gray-100 px-2 py-1 rounded-full">{k.term}</span>
                 ))}
               </div>
             </>
           )}
-        </section>
+        </div>
+        </>
+      )}
+
+      {batchResult && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold mb-4">Batch Analysis Results</h2>
+
+          {/* Consensus Summary */}
+          <div className="bg-blue-50 p-4 rounded-lg mb-6">
+            <h3 className="text-lg font-semibold mb-2">Consensus Analysis</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <div className="text-sm text-gray-600">Call Type</div>
+                <div className="font-semibold">{batchResult.consensus.callType}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Success Category</div>
+                <div className="font-semibold">{batchResult.consensus.successCategory}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Primary Intent</div>
+                <div className="font-semibold">{batchResult.consensus.intent}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Total Votes</div>
+                <div className="font-semibold">{batchResult.consensus.totalVotes}</div>
+              </div>
+            </div>
+            <div className="mt-2 text-sm text-gray-600">
+              Processed {batchResult.totalModels} models • {batchResult.successfulAnalyses} successful • {batchResult.failedAnalyses} failed • {(batchResult.processingTime / 1000).toFixed(2)}s total
+            </div>
+          </div>
+
+          {/* Results Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-gray-300">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 px-4 py-2 text-left">Model</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Provider</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Status</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Call Type</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Success</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Intent</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Confidence</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Time (ms)</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchResult.results.map((result, index) => (
+                  <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="border border-gray-300 px-4 py-2 font-mono text-sm">
+                      {result.modelInfo.name}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {result.modelInfo.provider}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        result.success
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {result.success ? 'Success' : 'Failed'}
+                      </span>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {result.result?.callType || '-'}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {result.result?.successCategory || '-'}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 text-sm">
+                      {result.result?.intent || '-'}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {result.result ? `${Math.round(result.result.confidence * 100)}%` : '-'}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">
+                      {result.result ? `${Math.round(result.result.analysisTime || 0)}` : '-'}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 text-sm text-red-600">
+                      {result.error || '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Product Analytics Modal */}
       {selectedProduct && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50
-          }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
           onClick={() => setSelectedProduct(null)}
         >
           <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '24px',
-              maxWidth: '600px',
-              width: '90%',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-            }}
+            className="bg-white rounded-lg p-6 max-w-2xl w-11/12 max-h-4/5 overflow-auto shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ fontSize: '24px', fontWeight: 'bold' }}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">
                 {selectedProduct} Analytics
               </h2>
               <button
                 onClick={() => setSelectedProduct(null)}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '4px',
-                  border: 'none',
-                  backgroundColor: '#f3f4f6',
-                  cursor: 'pointer'
-                }}
+                className="w-8 h-8 flex items-center justify-center rounded border-none bg-gray-100 cursor-pointer hover:bg-gray-200"
               >
                 ✕
               </button>
@@ -379,8 +545,8 @@ export default function HomePage() {
               <p>Loading analytics...</p>
             ) : productAnalytics ? (
               <div>
-                <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Overview</h3>
+                <div className="mb-4">
+                  <h3 className="font-semibold mb-2">Overview</h3>
                   <p>Total Calls: {productAnalytics.totalCalls}</p>
                   <p>Success Rate: {productAnalytics.successRate}</p>
                   {productAnalytics.partialSuccessRate !== '0.0%' && (
@@ -389,9 +555,9 @@ export default function HomePage() {
                   <p>Failure Rate: {productAnalytics.failureRate}</p>
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Top Intents</h3>
-                  <ul style={{ paddingLeft: 18 }}>
+                <div className="mb-4">
+                  <h3 className="font-semibold mb-2">Top Intents</h3>
+                  <ul className="pl-4">
                     {productAnalytics.topIntents.slice(0, 5).map((intent, i) => (
                       <li key={i}>
                         {intent.intent} ({intent.category}) - {intent.count} calls
@@ -400,9 +566,9 @@ export default function HomePage() {
                   </ul>
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Outcomes</h3>
-                  <ul style={{ paddingLeft: 18 }}>
+                <div className="mb-4">
+                  <h3 className="font-semibold mb-2">Outcomes</h3>
+                  <ul className="pl-4">
                     {Object.entries(productAnalytics.outcomes).map(([outcome, count]) => (
                       <li key={outcome}>
                         {outcome}: {count} calls
@@ -413,15 +579,15 @@ export default function HomePage() {
 
                 {productAnalytics.recordsByOutcome && (
                   <div>
-                    <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Sample Calls by Outcome</h3>
+                    <h3 className="font-semibold mb-2">Sample Calls by Outcome</h3>
                     {Object.entries(productAnalytics.recordsByOutcome).map(([outcome, records]) => (
-                      <div key={outcome} style={{ marginBottom: 12 }}>
-                        <h4 style={{ fontWeight: 500, marginBottom: 4 }}>{outcome}:</h4>
-                        <ul style={{ paddingLeft: 18, fontSize: '14px' }}>
+                      <div key={outcome} className="mb-3">
+                        <h4 className="font-medium mb-1">{outcome}:</h4>
+                        <ul className="pl-4 text-sm">
                           {records.slice(0, 3).map((record) => (
                             <li key={record.id}>
-                              Intent: {record.intent} | Type: {record.callType} | 
-                              <span style={{ marginLeft: 4, color: '#6366f1', fontFamily: 'monospace', fontSize: '12px' }}>
+                              Intent: {record.intent} | Type: {record.callType} |
+                              <span className="ml-1 text-indigo-500 font-mono text-xs">
                                 {record.id.slice(0, 8)}...
                               </span>
                             </li>
@@ -444,9 +610,9 @@ export default function HomePage() {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <span style={{ fontSize: 12, color: '#6b7280' }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 600 }}>{value}</span>
+    <div className="flex flex-col">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-sm font-semibold">{value}</span>
     </div>
   );
 }

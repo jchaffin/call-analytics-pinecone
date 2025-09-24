@@ -19,6 +19,7 @@
     "@ai-sdk/mistral": "^2.0.15",
     "@ai-sdk/openai": "^2.0.32",
     "@pinecone-database/pinecone": "^6.1.2",
+    "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "ai": "^5.0.48",

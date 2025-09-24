@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPinecone } from '@/lib/pinecone';
 import { NormalizedIntentSchema } from '@/utils/normalization';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const pc = getPinecone();

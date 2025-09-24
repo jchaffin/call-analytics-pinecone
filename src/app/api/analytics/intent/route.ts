@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPinecone } from '@/lib/pinecone';
 import { embedText } from '@/lib/embeddings';
 
+export const dynamic = 'force-dynamic';
+
 // Calculate cosine similarity between two vectors
 function cosineSimilarity(a: number[], b: number[]): number {
   let dotProduct = 0;

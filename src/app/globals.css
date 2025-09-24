@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+
 /* Shared layout */
 .container-main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .page-title { font-size: 28px; font-weight: 700; margin-bottom: 24px; }
@@ -56,4 +57,13 @@
 .record-badge { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
 .record-id { font-size: 11px; color: #6b7280; }
 .more { font-size: 12px; color: #6b7280; text-align: center; }
+
+/* File input styling */
+.file-input {
+  background-color: #f3f4f6;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+}
 
