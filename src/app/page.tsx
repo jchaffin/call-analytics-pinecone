@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { MODEL_PROVIDERS, getDefaultModelId } from '@/lib/ai';
 
 type Result = {
@@ -122,33 +122,79 @@ export default function HomePage() {
     return null;
   };
 
-  const renderTextWithProductLinks = (text: string, products: Array<{ id: string; name: string; score: number }> | undefined) => {
+  const renderTextWithProductLinks = (text: string, products: Array<{ id: string; name: string; score: number; brand?: string; category?: string }> | undefined) => {
     if (!products || products.length === 0) return text;
-    
-    // Create a regex pattern that matches any of the product names
-    const productNames = products.map(p => p.name);
-    const pattern = new RegExp(`(${productNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-    
-    const parts = text.split(pattern);
-    
-    return parts.map((part, index) => {
-      const matchedProduct = products.find(p => p.name.toLowerCase() === part.toLowerCase());
-      if (matchedProduct) {
-        return (
+
+    // Create a more flexible matching approach
+    // We'll look for sequences of words that match product components
+    const result: (string | React.JSX.Element)[] = [];
+    const words = text.split(/\s+/);
+    let i = 0;
+
+    while (i < words.length) {
+      let matchedProduct = null;
+      let matchLength = 0;
+
+      // Try to match increasingly longer sequences of words
+      for (let len = Math.min(words.length - i, 5); len >= 1; len--) {
+        const phrase = words.slice(i, i + len).join(' ');
+        matchedProduct = products.find(p => {
+          const productName = p.name.toLowerCase();
+          const phraseLower = phrase.toLowerCase();
+
+          // Exact match
+          if (productName === phraseLower) return true;
+
+          // Product name contains the phrase
+          if (productName.includes(phraseLower)) return true;
+
+          // Phrase contains the product name
+          if (phraseLower.includes(productName)) return true;
+
+          // Check individual words - if most words in phrase are in product name
+          const phraseWords = phraseLower.split(/\s+/);
+          const productWords = productName.split(/\s+/);
+          const matchingWords = phraseWords.filter(word =>
+            productWords.some(pWord => pWord.includes(word) || word.includes(pWord))
+          );
+
+          return matchingWords.length >= Math.min(phraseWords.length, productWords.length) * 0.8;
+        });
+
+        if (matchedProduct) {
+          matchLength = len;
+          break;
+        }
+      }
+
+      if (matchedProduct && matchLength > 0) {
+        const matchedText = words.slice(i, i + matchLength).join(' ');
+        result.push(
           <button
-            key={index}
+            key={i}
             onClick={() => {
               setSelectedProduct(matchedProduct.name);
               fetchProductAnalytics(matchedProduct.name);
             }}
             className="bg-none border-none p-0 text-indigo-500 underline cursor-pointer font-inherit"
+            title={`View analytics for ${matchedProduct.name}`}
           >
-            {part}
+            {matchedText}
           </button>
         );
+        i += matchLength;
+      } else {
+        result.push(words[i]);
+        i++;
       }
-      return part;
-    });
+
+      // Add space between words (except for the last element)
+      if (i < words.length) {
+        result.push(' ');
+      }
+    }
+
+    return result;
   };
 
   const fetchProductAnalytics = async (productName: string) => {
