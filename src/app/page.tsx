@@ -125,53 +125,27 @@ export default function HomePage() {
   const renderTextWithProductLinks = (text: string, products: Array<{ id: string; name: string; score: number; brand?: string; category?: string }> | undefined) => {
     if (!products || products.length === 0) return text;
 
-    // Create a more flexible matching approach
-    // We'll look for sequences of words that match product components
-    const result: (string | React.JSX.Element)[] = [];
-    const words = text.split(/\s+/);
-    let i = 0;
+    // Create a regex that matches exact product names with word boundaries
+    const productNames = products.map(p => p.name);
+    const escapedNames = productNames.map(name =>
+      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    );
 
-    while (i < words.length) {
-      let matchedProduct = null;
-      let matchLength = 0;
+    // Use word boundaries to ensure we match whole product names only
+    const pattern = new RegExp(`\\b(${escapedNames.join('|')})\\b`, 'gi');
 
-      // Try to match increasingly longer sequences of words
-      for (let len = Math.min(words.length - i, 5); len >= 1; len--) {
-        const phrase = words.slice(i, i + len).join(' ');
-        matchedProduct = products.find(p => {
-          const productName = p.name.toLowerCase();
-          const phraseLower = phrase.toLowerCase();
+    const parts = text.split(pattern);
 
-          // Exact match
-          if (productName === phraseLower) return true;
+    return parts.map((part, index) => {
+      // Find exact case-insensitive match
+      const matchedProduct = products.find(p =>
+        p.name.toLowerCase() === part.toLowerCase()
+      );
 
-          // Product name contains the phrase
-          if (productName.includes(phraseLower)) return true;
-
-          // Phrase contains the product name
-          if (phraseLower.includes(productName)) return true;
-
-          // Check individual words - if most words in phrase are in product name
-          const phraseWords = phraseLower.split(/\s+/);
-          const productWords = productName.split(/\s+/);
-          const matchingWords = phraseWords.filter(word =>
-            productWords.some(pWord => pWord.includes(word) || word.includes(pWord))
-          );
-
-          return matchingWords.length >= Math.min(phraseWords.length, productWords.length) * 0.8;
-        });
-
-        if (matchedProduct) {
-          matchLength = len;
-          break;
-        }
-      }
-
-      if (matchedProduct && matchLength > 0) {
-        const matchedText = words.slice(i, i + matchLength).join(' ');
-        result.push(
+      if (matchedProduct) {
+        return (
           <button
-            key={i}
+            key={index}
             onClick={() => {
               setSelectedProduct(matchedProduct.name);
               fetchProductAnalytics(matchedProduct.name);
@@ -179,22 +153,12 @@ export default function HomePage() {
             className="bg-none border-none p-0 text-indigo-500 underline cursor-pointer font-inherit"
             title={`View analytics for ${matchedProduct.name}`}
           >
-            {matchedText}
+            {part}
           </button>
         );
-        i += matchLength;
-      } else {
-        result.push(words[i]);
-        i++;
       }
-
-      // Add space between words (except for the last element)
-      if (i < words.length) {
-        result.push(' ');
-      }
-    }
-
-    return result;
+      return part;
+    });
   };
 
   const fetchProductAnalytics = async (productName: string) => {
