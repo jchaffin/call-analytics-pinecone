@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 import { z } from 'zod';
 import { generateObject } from 'ai';
-import { getModel, openModel, getDefaultModel } from '@/lib/ai';
+import { openModel, getDefaultModel } from '@/lib/ai';
 import { CallTypeEnum, SuccessCategoryEnum, FinalSchema } from '@/utils/schemas';
 import { normalizeFinal } from '@/utils/normalization';
 import { getPinecone } from '@/lib/pinecone';
 import { embedText } from '@/lib/embeddings';
+
 
 export const runtime = 'nodejs';
 
@@ -53,26 +54,30 @@ export async function POST(req: NextRequest) {
     const PassBSchema = z.object({
       summary: z.string().min(1),
       keyPoints: z.array(z.string().min(1)).min(1),
-      actionItems: z.array(z.string().min(1)).default([]),
-      products: z.array(z.object({
-        name: z.string().describe('Full product name as mentioned'),
-        brand: z.string().optional().describe('Brand name if mentioned'),
-        category: z.string().optional().describe('Product category')
-      })).default([])
+      actionItems: z.array(z.string().min(1)).default([])
     });
 
-    // Run Pass A and Pass B in parallel
+    const PassCSchema = z.object({
+      products: z.array(z.object({
+        name: z.string().describe('Product name without brand'),
+        brand: z.string().optional().describe('Brand name'),
+        category: z.string().optional().describe('Semantic category based on product type')
+      })).default([]),
+      orderNumbers: z.array(z.string()).default([]).describe('Order numbers or reference numbers mentioned')
+    });
+
+    // Run Pass A, Pass B, and Pass C in parallel
     const aiStartTime = performance.now();
-    const [passA, passB] = await Promise.all([
+    const [passA, passB, passC] = await Promise.all([
       // Pass A: Classification (call type, success, intent)
       generateObject({
         model,
         schema: PassASchema,
         system: 'You are an expert call center QA analyst. Classify calls and identify intent.',
         prompt: `Analyze the transcript and determine:
-1. callType: Automated or Escalated
+1. callType: Automated, Escalated
    - Automated: AI handled the entire call
-   - Escalated: AI directed customer to external support
+   - Escalated: AI directed customer to external support and the call ended
    
 2. successCategory: Successful, Partially Successful, or Unsuccessful
    - Automated calls: Only Successful or Unsuccessful
@@ -109,7 +114,7 @@ ${transcript}`
         });
       }),
 
-      // Pass B: Content extraction (summary, products, key points)
+      // Pass B: Content extraction (summary, key points, action items)
       generateObject({
         model,
         schema: PassBSchema,
@@ -118,10 +123,22 @@ ${transcript}`
 1. summary: 2-3 sentence summary
 2. keyPoints: 3-6 key points from the call
 3. actionItems: Any follow-up actions needed
-4. products: Specific products mentioned with:
-   - name: Full product name
-   - brand: If mentioned (Nike, Adidas, etc.)
-   - category: sneakers/apparel/accessories/equipment
+
+Transcript:
+${transcript}`
+      }),
+
+      // Pass C: Product and order number extraction
+      generateObject({
+        model,
+        schema: PassCSchema,
+        system: 'You extract products and order numbers from customer service calls.',
+        prompt: `Extract from this transcript:
+1. products: Specific products mentioned with:
+   - name: Product name without brand
+   - brand: Brand name
+   - category: Semantic category based on product type
+2. orderNumbers: Order numbers, reference numbers, or tracking numbers mentioned
 
 Transcript:
 ${transcript}`
@@ -130,7 +147,7 @@ ${transcript}`
     timings.ai_analysis = performance.now() - aiStartTime;
 
     // Pinecone: embed transcript and search
-    let products: Array<{ id: string; name: string; score: number; category?: string }> = [];
+    let products: Array<{ id: string; name: string; score: number; brand?: string; category?: string }> = [];
     let keywords: Array<{ term: string; score: number }> = [];
     let relatedDocs: Array<{ id: string; score: number; metadata?: Record<string, unknown> }> = [];
     let pineconeRecordId: string | undefined;
@@ -161,22 +178,24 @@ ${transcript}`
     }
     timings.pinecone_search = performance.now() - pineconeSearchStartTime;
 
-    // Add AI-extracted products from Pass B
+    // Add AI-extracted products from Pass C
     try {
-      const aiProducts = passB.object.products;
+      const aiProducts = passC.object.products;
       const seen = new Set(products.map((p) => p.name.toLowerCase()));
       
       for (const p of aiProducts) {
         const productName = p.name.trim();
-        if (productName && !seen.has(productName.toLowerCase())) {
-          const id = productName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-          products.push({ 
-            id, 
-            name: productName, 
+        const fullProductName = p.brand ? `${p.brand} ${productName}` : productName;
+        if (productName && !seen.has(fullProductName.toLowerCase())) {
+          const id = fullProductName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          products.push({
+            id,
+            name: fullProductName,
             score: 0.9, // Higher confidence for AI-extracted products
+            brand: p.brand,
             category: p.category
           });
-          seen.add(productName.toLowerCase());
+          seen.add(fullProductName.toLowerCase());
         }
       }
     } catch (_) {}

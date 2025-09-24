@@ -14,8 +14,9 @@ type Result = {
   keyPoints: string[];
   actionItems: string[];
   escalationReason?: string;
-  products?: { id: string; name: string; score: number }[];
+  products?: { id: string; name: string; score: number; brand?: string; category?: string }[];
   keywords?: { term: string; score: number }[];
+  orderNumbers?: string[];
   relatedDocs?: { id: string; score: number; metadata?: Record<string, unknown> }[];
   pineconeRecordId?: string;
   _timings?: {
@@ -82,8 +83,33 @@ export default function HomePage() {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [batchResult, setBatchResult] = useState<BatchAnalysis | null>(null);
   const [isBatchLoading, setIsBatchLoading] = useState(false);
+  const [sortByTime, setSortByTime] = useState<'asc' | 'desc' | null>(null);
 
   const canSubmit = useMemo(() => transcript.trim().length > 0 && !isLoading, [transcript, isLoading]);
+
+  // Sort batch results by analysis time
+  const sortedBatchResults = useMemo(() => {
+    if (!batchResult || !sortByTime) return batchResult?.results || [];
+
+    return [...batchResult.results].sort((a, b) => {
+      const timeA = a.result?.analysisTime || 0;
+      const timeB = b.result?.analysisTime || 0;
+
+      if (sortByTime === 'asc') {
+        return timeA - timeB;
+      } else {
+        return timeB - timeA;
+      }
+    });
+  }, [batchResult, sortByTime]);
+
+  const handleTimeSort = () => {
+    setSortByTime(current => {
+      if (current === null) return 'asc';
+      if (current === 'asc') return 'desc';
+      return null;
+    });
+  };
   
   // Helper to get model info
   const getModelInfo = (modelId: string): { name: string; description: string } | null => {
@@ -203,7 +229,7 @@ export default function HomePage() {
     setBatchResult(null);
     try {
       console.log('Starting batch analysis for text length:', tx.length);
-      const res = await fetch('/api/batch-analyze', {
+      const res = await fetch('/api/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: tx })
@@ -352,16 +378,19 @@ export default function HomePage() {
               {result.escalationReason && (
                 <div>
                   <div className="text-sm text-gray-500">Escalation Reason</div>
-                  <div className="text-lg font-semibold">{result.escalationReason}</div>
+                  <div className="text-sm font-medium">{result.escalationReason}</div>
                 </div>
               )}
             </div>
 
             {result._timings && (
-              <div className="mt-2 text-sm text-gray-500">
-                Analysis time: {(result._timings.total / 1000).toFixed(2)}s
-                (AI: {(result._timings.ai_analysis / 1000).toFixed(2)}s,
-                 Pinecone: {((result._timings.pinecone_search + result._timings.pinecone_upsert) / 1000).toFixed(2)}s)
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="text-sm font-medium text-blue-800 mb-1">Analysis Time</div>
+                <div className="text-sm text-blue-700">
+                  Total: {(result._timings.total / 1000).toFixed(2)}s |
+                  AI: {(result._timings.ai_analysis / 1000).toFixed(2)}s |
+                  Pinecone: {((result._timings.pinecone_search + result._timings.pinecone_upsert) / 1000).toFixed(2)}s
+                </div>
               </div>
             )}
           </div>
@@ -398,8 +427,9 @@ export default function HomePage() {
                       fetchProductAnalytics(p.name);
                     }}
                     className="px-3 py-1 bg-purple-200 text-purple-800 rounded-full text-sm border-none cursor-pointer hover:bg-purple-300 transition-colors duration-200"
+                    title={`${p.brand ? `${p.brand} ` : ''}${p.name}${p.category ? ` (${p.category})` : ''}`}
                   >
-                    {p.name} ({Math.round(p.score * 100)}%)
+                    {p.brand ? `${p.brand} ${p.name}` : p.name} ({Math.round(p.score * 100)}%)
                   </button>
                 ))}
               </div>
@@ -421,6 +451,19 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-2">
                 {result.keywords.map((k, i) => (
                   <span key={i} className="bg-gray-100 px-2 py-1 rounded-full">{k.term}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {result.orderNumbers && result.orderNumbers.length > 0 && (
+            <>
+              <h3 className="font-semibold my-3">Order Numbers</h3>
+              <div className="flex flex-wrap gap-2">
+                {result.orderNumbers.map((orderNum, i) => (
+                  <span key={i} className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-mono text-sm">
+                    {orderNum}
+                  </span>
                 ))}
               </div>
             </>
@@ -471,12 +514,19 @@ export default function HomePage() {
                   <th className="border border-gray-300 px-4 py-2 text-left">Success</th>
                   <th className="border border-gray-300 px-4 py-2 text-left">Intent</th>
                   <th className="border border-gray-300 px-4 py-2 text-left">Confidence</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left">Time (ms)</th>
+                  <th
+                    className="border border-gray-300 px-4 py-2 text-left cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={handleTimeSort}
+                  >
+                    Time (s)
+                    {sortByTime === 'asc' && ' ↑'}
+                    {sortByTime === 'desc' && ' ↓'}
+                  </th>
                   <th className="border border-gray-300 px-4 py-2 text-left">Error</th>
                 </tr>
               </thead>
               <tbody>
-                {batchResult.results.map((result, index) => (
+                {sortedBatchResults.map((result, index) => (
                   <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="border border-gray-300 px-4 py-2 font-mono text-sm">
                       {result.modelInfo.name}
@@ -506,7 +556,7 @@ export default function HomePage() {
                       {result.result ? `${Math.round(result.result.confidence * 100)}%` : '-'}
                     </td>
                     <td className="border border-gray-300 px-4 py-2 text-right">
-                      {result.result ? `${Math.round(result.result.analysisTime || 0)}` : '-'}
+                      {result.result ? `${((result.result.analysisTime || 0) / 1000).toFixed(2)}` : '-'}
                     </td>
                     <td className="border border-gray-300 px-4 py-2 text-sm text-red-600">
                       {result.error || '-'}
@@ -522,7 +572,7 @@ export default function HomePage() {
       {/* Product Analytics Modal */}
       {selectedProduct && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          className="fixed inset-0 flex items-center justify-center z-50"
           onClick={() => setSelectedProduct(null)}
         >
           <div

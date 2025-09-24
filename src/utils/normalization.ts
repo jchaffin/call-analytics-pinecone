@@ -88,7 +88,13 @@ export function normalizeFinal(result: unknown) {
   if (Array.isArray(obj.actionItems)) obj.actionItems = obj.actionItems.map((k: unknown) => String(k).trim()).filter(Boolean);
   if (Array.isArray(obj.products)) {
     obj.products = obj.products
-      .map((p: any) => ({ id: String(p.id), name: String(p.name ?? p.id), score: clamp01(Number(p.score ?? 0)) }))
+      .map((p: any) => ({
+        id: String(p.id),
+        name: String(p.name ?? p.id),
+        score: clamp01(Number(p.score ?? 0)),
+        brand: p.brand ? String(p.brand) : undefined,
+        category: p.category ? String(p.category) : undefined
+      }))
       .filter((p: any) => p.id && p.name);
   }
   if (Array.isArray(obj.keywords)) {

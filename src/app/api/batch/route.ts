@@ -25,12 +25,16 @@ const PassASchema = z.object({
 const PassBSchema = z.object({
   summary: z.string().min(1),
   keyPoints: z.array(z.string().min(1)).min(1),
-  actionItems: z.array(z.string().min(1)).default([]),
+  actionItems: z.array(z.string().min(1)).default([])
+});
+
+const PassCSchema = z.object({
   products: z.array(z.object({
-    name: z.string().describe('Full product name as mentioned'),
-    brand: z.string().optional().describe('Brand name if mentioned'),
-    category: z.string().optional().describe('Product category')
-  })).default([])
+    name: z.string().describe('Product name without brand'),
+    brand: z.string().optional().describe('Brand name'),
+    category: z.string().optional().describe('Semantic category based on product type')
+  })).default([]),
+  orderNumbers: z.array(z.string()).default([]).describe('Order numbers or reference numbers mentioned')
 });
 
 async function analyzeWithModel(modelId: string, transcript: string) {
@@ -39,8 +43,8 @@ async function analyzeWithModel(modelId: string, transcript: string) {
   try {
     const model = openModel(modelId);
     
-    // Run Pass A and Pass B in parallel for this model
-    const [passA, passB] = await Promise.all([
+    // Run Pass A, Pass B, and Pass C in parallel for this model
+    const [passA, passB, passC] = await Promise.all([
       // Pass A: Classification
       generateObject({
         model,
@@ -95,10 +99,22 @@ ${transcript}`
 1. summary: 2-3 sentence summary
 2. keyPoints: 3-6 key points from the call
 3. actionItems: Any follow-up actions needed
-4. products: Specific products mentioned with:
-   - name: Full product name
-   - brand: If mentioned (Nike, Adidas, etc.)
-   - category: sneakers/apparel/accessories/equipment
+
+Transcript:
+${transcript}`
+      }),
+
+      // Pass C: Product and order number extraction
+      generateObject({
+        model,
+        schema: PassCSchema,
+        system: 'You extract products and order numbers from customer service calls.',
+        prompt: `Extract from this transcript:
+1. products: Specific products mentioned with:
+   - name: Product name without brand (e.g., "Dri-FIT running shirt")
+   - brand: Brand name (e.g., "Nike", "Adidas")
+   - category: Semantic category based on product type (e.g., "running shirt" → "shirts", "running shoes" → "shoes", "basketball jersey" → "shirts")
+2. orderNumbers: Order numbers, reference numbers, or tracking numbers mentioned (e.g., "order #12345", "ref: ABC-789", "tracking: 1Z999AA1234567890")
 
 Transcript:
 ${transcript}`
@@ -115,17 +131,24 @@ ${transcript}`
       summary: passB.object.summary,
       keyPoints: passB.object.keyPoints,
       actionItems: passB.object.actionItems,
-      products: passB.object.products.map(p => ({
-        id: p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
-        name: p.name,
+      products: passC.object.products.map(p => ({
+        id: `${p.brand || 'unknown'}-${p.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+        name: p.brand ? `${p.brand} ${p.name}` : p.name,
         score: 0.9,
+        brand: p.brand,
         category: p.category
       })),
+      orderNumbers: passC.object.orderNumbers || [],
       analysisTime: performance.now() - startTime,
     };
 
     const normalized = normalizeFinal(composed) || composed;
-    
+
+    // Preserve analysisTime which gets stripped by normalizeFinal
+    if (normalized && composed.analysisTime) {
+      (normalized as any).analysisTime = composed.analysisTime;
+    }
+
     return {
       success: true,
       modelId,
@@ -134,11 +157,12 @@ ${transcript}`
     };
     
   } catch (error: any) {
+    console.error(`Analysis failed for model ${modelId}:`, error.message);
     return {
       success: false,
       modelId,
       result: null,
-      error: error.message || 'Analysis failed'
+      error: `Model ${modelId}: ${error.message || 'Analysis failed'}`
     };
   }
 }

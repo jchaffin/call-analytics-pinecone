@@ -1,16 +1,22 @@
-import './globals.css';
-export const metadata = {
-  title: 'Post Call Analytics',
-  description: 'Prompt-chained post call analysis with validation',
-};
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body className="max-w-[800px] mx-auto p-6 font-sans">
-        {children}
-      </body>
-    </html>
-  );
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'Post Call Analytics',
+  description: 'AI-powered call center transcript analysis',
 }
 
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
+    </html>
+  )
+}

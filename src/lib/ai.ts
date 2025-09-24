@@ -9,6 +9,7 @@ export const MODEL_PROVIDERS = {
     models: {
       'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Fast & affordable' },
       'gpt-4o': { name: 'GPT-4o', description: 'Balanced performance' },
+      'gpt-4o-2024-08-06': { name: 'GPT-4o (Aug 2024)', description: 'Specific version with guaranteed stability' }
     }
   },
   anthropic: {
@@ -17,8 +18,6 @@ export const MODEL_PROVIDERS = {
       'claude-3-5-sonnet-latest': { name: 'Claude 3.5 Sonnet', description: 'Most intelligent, latest' },
       'claude-3-5-sonnet-20241022': { name: 'Claude 3.5 Sonnet (Oct)', description: 'Previous Sonnet version' },
       'claude-3-5-haiku-latest': { name: 'Claude 3.5 Haiku', description: 'Fast & smart' },
-      'claude-3-opus-latest': { name: 'Claude 3 Opus', description: 'Powerful, creative' },
-      'claude-3-sonnet-20240229': { name: 'Claude 3 Sonnet', description: 'Balanced' },
       'claude-3-haiku-20240307': { name: 'Claude 3 Haiku', description: 'Fast & light' },
     }
   },

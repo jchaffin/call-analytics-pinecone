@@ -67,4 +67,3 @@ export const FinalSchema = z.object({
 });
 
 export type FinalAnalysis = z.infer<typeof FinalSchema>;
-
